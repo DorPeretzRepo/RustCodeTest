@@ -77,6 +77,11 @@ To run the unit tests, execute:
 cargo test
 ```
 
+Or as below to output the test cases to the terminal:
+```bash
+cargo test -- --nocapture
+```
+
 ## Example Output
 ```json
 {
