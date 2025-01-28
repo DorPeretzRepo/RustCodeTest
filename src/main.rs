@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::error::Error;
 
+/// Represents an election with its ID, description, and available choices.
 #[derive(Serialize, Deserialize, Debug)]
 struct Election {
     id: u32,
@@ -10,18 +11,21 @@ struct Election {
     choices: Vec<Choice>,
 }
 
+/// Represents a single choice in an election.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct Choice {
     id: u32,
     text: String,
 }
 
+/// Represents a vote with a contest ID and a choice ID.
 #[derive(Serialize, Deserialize, Debug)]
 struct Vote {
     contest_id: u32,
     choice_id: u32,
 }
 
+/// Represents the results of an election tally.
 #[derive(Serialize, Debug)]
 struct ResultData {
     contest_id: u32,
@@ -30,12 +34,19 @@ struct ResultData {
     winner: Option<Choice>,
 }
 
+/// Represents the tally of votes for a specific choice.
 #[derive(Serialize, Debug)]
 struct ChoiceResult {
     choice_id: u32,
     total_count: u32,
 }
 
+/// Tally the votes for a given election, returning the results.
+///
+/// - `election`: The election to tally votes for.
+/// - `votes`: The list of votes to be tallied.
+///
+/// Returns a `ResultData` containing the results and the winner.
 fn tally_votes(election: &Election, votes: Vec<Vote>) -> ResultData {
     let mut vote_counts: HashMap<u32, u32> = HashMap::new();
 
@@ -72,6 +83,8 @@ fn tally_votes(election: &Election, votes: Vec<Vote>) -> ResultData {
         winner,
     }
 }
+
+/// Main function to read input files, tally votes, and write the results to an output file.
 fn main() -> Result<(), Box<dyn Error>> {
     let election_data = fs::read_to_string("election.json")?;
     let votes_data = fs::read_to_string("votes.json")?;
@@ -93,6 +106,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 mod tests {
     use super::*;
 
+    /// Test case for elections with no choices.
     #[test]
     fn test_no_choices() {
         let election = Election {
@@ -109,6 +123,7 @@ mod tests {
         assert!(result.winner.is_none());
     }
 
+    /// Test case for tied votes.
     #[test]
     fn test_tied_votes() {
         let election = Election {
@@ -131,6 +146,7 @@ mod tests {
         assert!(result.winner.is_some());
     }
 
+    /// Test case for invalid votes with non-existent choice IDs.
     #[test]
     fn test_invalid_votes() {
         let election = Election {
@@ -151,6 +167,7 @@ mod tests {
         assert!(result.winner.is_none());
     }
 
+    /// Test case for votes associated with multiple contests.
     #[test]
     fn test_multiple_contests() {
         let election = Election {
@@ -171,6 +188,7 @@ mod tests {
         assert!(result.winner.is_none());
     }
 
+    /// Test case for missing fields in the JSON input.
     #[test]
     fn test_missing_fields() {
         let invalid_json = "{ \"id\": 1 }"; // Missing fields
@@ -180,6 +198,7 @@ mod tests {
         assert!(parsed_result.is_err(), "Expected an error when parsing incomplete JSON.");
     }
 
+    /// Test case for elections with duplicate choice IDs.
     #[test]
     fn test_duplicate_choice_ids() {
         let election = Election {
@@ -198,6 +217,7 @@ mod tests {
         assert_eq!(result.results.len(), 2); // Both entries with ID 1 should be counted
     }
 
+    /// Test case for empty election and vote files.
     #[test]
     fn test_empty_files() {
         let election = Election {
@@ -214,6 +234,7 @@ mod tests {
         assert!(result.winner.is_none());
     }
 
+    /// Test case for a single vote cast.
     #[test]
     fn test_single_vote() {
         let election = Election {
@@ -229,6 +250,7 @@ mod tests {
         assert_eq!(result.winner.unwrap().id, 1);
     }
 
+    /// Test case for votes associated with a non-existent contest.
     #[test]
     fn test_votes_for_nonexistent_contest() {
         let election = Election {
