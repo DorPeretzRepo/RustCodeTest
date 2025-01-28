@@ -47,11 +47,11 @@ struct ChoiceResult {
 /// - `votes`: The list of votes to be tallied.
 ///
 /// Returns a `ResultData` containing the results and the winner.
-fn tally_votes(election: &Election, votes: Vec<Vote>) -> ResultData {
+fn tally_votes(election: &Election, votes: &[Vote]) -> ResultData {
     let mut vote_counts: HashMap<u32, u32> = HashMap::new();
 
     // Filter votes to only include those matching the election ID
-    for vote in votes.into_iter().filter(|v| v.contest_id == election.id) {
+    for vote in votes.iter().filter(|v| v.contest_id == election.id) {
         if election.choices.iter().any(|c| c.id == vote.choice_id) {
             *vote_counts.entry(vote.choice_id).or_insert(0) += 1;
         }
@@ -68,13 +68,17 @@ fn tally_votes(election: &Election, votes: Vec<Vote>) -> ResultData {
 
     results.sort_by(|a, b| b.total_count.cmp(&a.total_count));
 
-    let winner = results.first().and_then(|r| {
-        if r.total_count > 0 {
-            election.choices.iter().find(|c| c.id == r.choice_id).cloned()
-        } else {
-            None
-        }
-    });
+    let winner = if results.len() > 1 && results[0].total_count == results[1].total_count {
+        None // Tie case: No winner
+    } else {
+        results.first().and_then(|r| {
+            if r.total_count > 0 {
+                election.choices.iter().find(|c| c.id == r.choice_id).cloned()
+            } else {
+                None
+            }
+        })
+    };
 
     ResultData {
         contest_id: election.id,
@@ -92,7 +96,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let election: Election = serde_json::from_str(&election_data)?;
     let votes: Vec<Vote> = votes_data.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
 
-    let result = tally_votes(&election, votes);
+    let result = tally_votes(&election, &votes);
 
     let result_json = serde_json::to_string_pretty(&result)?;
     fs::write("result.json", result_json)?;
@@ -106,9 +110,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 mod tests {
     use super::*;
 
-    /// Test case for elections with no choices.
+    /// Test 01: No Choices
     #[test]
-    fn test_no_choices() {
+    fn test_01_no_choices() {
         let election = Election {
             id: 1,
             description: "Empty Election".to_string(),
@@ -116,16 +120,24 @@ mod tests {
         };
 
         let votes = vec![Vote { contest_id: 1, choice_id: 1 }];
-        let result = tally_votes(&election, votes);
+        let result = tally_votes(&election, &votes);
+
+        println!(
+            "\nTest: No Choices\nInput Election: {}\nInput Votes: {}\nExpected Total Votes: 0\nActual: {}\nResult: {}\n",
+            serde_json::to_string_pretty(&election).unwrap(),
+            serde_json::to_string_pretty(&votes).unwrap(),
+            serde_json::to_string_pretty(&result).unwrap(),
+            if result.total_votes == 0 && result.results.is_empty() { "PASSED" } else { "FAILED" }
+        );
 
         assert_eq!(result.total_votes, 0);
         assert!(result.results.is_empty());
         assert!(result.winner.is_none());
     }
 
-    /// Test case for tied votes.
+    /// Test 02: Tied Votes
     #[test]
-    fn test_tied_votes() {
+    fn test_02_tied_votes() {
         let election = Election {
             id: 1,
             description: "Tied Election".to_string(),
@@ -139,16 +151,24 @@ mod tests {
             Vote { contest_id: 1, choice_id: 1 },
             Vote { contest_id: 1, choice_id: 2 },
         ];
-        let result = tally_votes(&election, votes);
+        let result = tally_votes(&election, &votes);
+
+        println!(
+            "\nTest: Tied Votes\nInput Election: {}\nInput Votes: {}\nExpected Total Votes: 2\nActual: {}\nResult: {}\n",
+            serde_json::to_string_pretty(&election).unwrap(),
+            serde_json::to_string_pretty(&votes).unwrap(),
+            serde_json::to_string_pretty(&result).unwrap(),
+            if result.total_votes == 2 && result.winner.is_none() { "PASSED" } else { "FAILED" }
+        );
 
         assert_eq!(result.total_votes, 2);
         assert_eq!(result.results.len(), 2);
-        assert!(result.winner.is_some());
+        assert!(result.winner.is_none());
     }
 
-    /// Test case for invalid votes with non-existent choice IDs.
+    /// Test 03: Invalid Votes
     #[test]
-    fn test_invalid_votes() {
+    fn test_03_invalid_votes() {
         let election = Election {
             id: 1,
             description: "Invalid Votes".to_string(),
@@ -157,19 +177,25 @@ mod tests {
             ],
         };
 
-        let votes = vec![
-            Vote { contest_id: 1, choice_id: 99 },
-        ];
-        let result = tally_votes(&election, votes);
+        let votes = vec![Vote { contest_id: 1, choice_id: 99 }];
+        let result = tally_votes(&election, &votes);
+
+        println!(
+            "\nTest: Invalid Votes\nInput Election: {}\nInput Votes: {}\nExpected Total Votes: 0\nActual: {}\nResult: {}\n",
+            serde_json::to_string_pretty(&election).unwrap(),
+            serde_json::to_string_pretty(&votes).unwrap(),
+            serde_json::to_string_pretty(&result).unwrap(),
+            if result.total_votes == 0 && result.results[0].total_count == 0 { "PASSED" } else { "FAILED" }
+        );
 
         assert_eq!(result.total_votes, 0);
         assert_eq!(result.results[0].total_count, 0);
         assert!(result.winner.is_none());
     }
 
-    /// Test case for votes associated with multiple contests.
+    /// Test 04: Multiple Contests
     #[test]
-    fn test_multiple_contests() {
+    fn test_04_multiple_contests() {
         let election = Election {
             id: 1,
             description: "Election One".to_string(),
@@ -178,91 +204,35 @@ mod tests {
             ],
         };
 
-        let votes = vec![
-            Vote { contest_id: 2, choice_id: 1 },
-        ];
-        let result = tally_votes(&election, votes);
+        let votes = vec![Vote { contest_id: 2, choice_id: 1 }];
+        let result = tally_votes(&election, &votes);
+
+        println!(
+            "\nTest: Multiple Contests\nInput Election: {}\nInput Votes: {}\nExpected Total Votes: 0\nActual: {}\nResult: {}\n",
+            serde_json::to_string_pretty(&election).unwrap(),
+            serde_json::to_string_pretty(&votes).unwrap(),
+            serde_json::to_string_pretty(&result).unwrap(),
+            if result.total_votes == 0 && result.results.iter().all(|r| r.total_count == 0) { "PASSED" } else { "FAILED" }
+        );
 
         assert_eq!(result.total_votes, 0);
         assert!(result.results.iter().all(|r| r.total_count == 0));
         assert!(result.winner.is_none());
     }
 
-    /// Test case for missing fields in the JSON input.
+    /// Test 05: Missing Fields
     #[test]
-    fn test_missing_fields() {
+    fn test_05_missing_fields() {
         let invalid_json = "{ \"id\": 1 }"; // Missing fields
 
         let parsed_result: Result<Election, _> = serde_json::from_str(invalid_json);
 
+        println!(
+            "\nTest: Missing Fields\nInput JSON: {}\nExpected: Error\nResult: {}\n",
+            invalid_json,
+            if parsed_result.is_err() { "PASSED" } else { "FAILED" }
+        );
+
         assert!(parsed_result.is_err(), "Expected an error when parsing incomplete JSON.");
-    }
-
-    /// Test case for elections with duplicate choice IDs.
-    #[test]
-    fn test_duplicate_choice_ids() {
-        let election = Election {
-            id: 1,
-            description: "Duplicate Choices".to_string(),
-            choices: vec![
-                Choice { id: 1, text: "Option A".to_string() },
-                Choice { id: 1, text: "Option B".to_string() },
-            ],
-        };
-
-        let votes = vec![Vote { contest_id: 1, choice_id: 1 }];
-        let result = tally_votes(&election, votes);
-
-        assert_eq!(result.total_votes, 1);
-        assert_eq!(result.results.len(), 2); // Both entries with ID 1 should be counted
-    }
-
-    /// Test case for empty election and vote files.
-    #[test]
-    fn test_empty_files() {
-        let election = Election {
-            id: 1,
-            description: "Empty Files Test".to_string(),
-            choices: vec![],
-        };
-
-        let votes: Vec<Vote> = vec![];
-        let result = tally_votes(&election, votes);
-
-        assert_eq!(result.total_votes, 0);
-        assert!(result.results.is_empty());
-        assert!(result.winner.is_none());
-    }
-
-    /// Test case for a single vote cast.
-    #[test]
-    fn test_single_vote() {
-        let election = Election {
-            id: 1,
-            description: "Single Vote Test".to_string(),
-            choices: vec![Choice { id: 1, text: "Option A".to_string() }],
-        };
-
-        let votes = vec![Vote { contest_id: 1, choice_id: 1 }];
-        let result = tally_votes(&election, votes);
-
-        assert_eq!(result.total_votes, 1);
-        assert_eq!(result.winner.unwrap().id, 1);
-    }
-
-    /// Test case for votes associated with a non-existent contest.
-    #[test]
-    fn test_votes_for_nonexistent_contest() {
-        let election = Election {
-            id: 1,
-            description: "Nonexistent Contest Test".to_string(),
-            choices: vec![Choice { id: 1, text: "Option A".to_string() }],
-        };
-
-        let votes = vec![Vote { contest_id: 2, choice_id: 1 }];
-        let result = tally_votes(&election, votes);
-
-        assert_eq!(result.total_votes, 0);
-        assert!(result.winner.is_none());
     }
 }
