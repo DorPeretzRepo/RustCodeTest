@@ -1,5 +1,5 @@
 [package]
-name = "RustCodeTest"
+name = "rust_tally_functionality"
 version = "0.1.0"
 edition = "2021"
 
